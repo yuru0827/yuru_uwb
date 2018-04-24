@@ -6,7 +6,7 @@ import math
 import rospy
 import tf
 import time
-from bebop_msgs.msg import Ardrone3PilotingStateAltitudeChanged
+from Ardrone3PilotingStateAltitudeChanged  import bebop
 from sensor_msgs.msg import Range
 from std_msgs.msg import Empty
 from std_msgs.msg import Float64

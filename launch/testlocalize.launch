@@ -1,0 +1,42 @@
+<?xml version="1.0"?>
+<launch>
+
+    <arg name="car_frame_id" default="body"/>
+    <arg name="pose_cov_topic" default="/uwb_pose_cov"/>
+    <arg name="cov_x_2d" default="0.6"/>
+    <arg name="cov_y_2d" default="0.6"/>
+    <arg name="cov_z_2d" default="0.6"/>
+    <arg name="cov_x_3d" default="0.6"/>
+    <arg name="cov_y_3d" default="0.6"/>
+    <arg name="cov_z_3d" default="0.6"/>
+    <arg name="sensor_noise" default="0.000370"/>
+
+    <param name="sensor_noise" value="$(arg sensor_noise)"/>
+    <rosparam param="tag_names">
+        ["tag_right_center"]
+    </rosparam>
+
+    <rosparam command="load" file="$(find decawave_localization)/config/test.yaml" />
+
+    <rosparam param="offsets">
+        [ "0.0"]
+    </rosparam>
+
+    <!-- Reading from tag sensors -->
+
+    <node name="reader1" type="kalmantag.py" pkg="decawave_localization"
+        output="screen">
+        <param name="port" value="/dev/ttyACM0"/>
+        <param name="baud" value="115200"/>
+        <param name="frequency" value="100"/>
+    </node>
+
+    <node name="filter_reader1" type="kalman.py" pkg="decawave_localization" output="screen">
+        <param name="tag_range_topic" value="tag_left_front/range" />
+    </node>
+
+
+
+   
+
+</launch>

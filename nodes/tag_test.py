@@ -22,6 +22,7 @@ class DecaWaveTag:
         self.offsets = rospy.get_param("offsets")
         self.rate = rospy.Rate(rospy.get_param("frequency", 100))
         self.poseStamped = PoseStamped()
+        self.kposeStamped = PoseStamped()
         self.ser = serial.Serial(port=port, timeout=None, baudrate=baud)
         self.pub = None
         self.offset = 0.0
@@ -34,16 +35,22 @@ class DecaWaveTag:
     def run(self):
         while not rospy.is_shutdown():
             dist = self.get_dist()
+            kdist = self.get_kdist()
             # print dist
             if dist is not None and self.pub is not None:
                 position = self.trilaterate3D(dist)
+                kposition = self.trilaterate3D(kdist)
                 print(position)
                 self.poseStamped.pose.position.x = position[0]
                 self.poseStamped.pose.position.y = position[1]
                 self.poseStamped.pose.position.z = position[2]
+                self.kposeStamped.pose.position.x = kposition[0]
+                self.kposeStamped.pose.position.y = kposition[1]
+                self.kposeStamped.pose.position.z = kposition[2]
                 # # if self.poseStamped.header.frame_id == "tag_right_front":
                 # #     print dist
                 self.pub.publish(self.poseStamped)
+                self.pub.publish(self.kposeStamped)
             self.rate.sleep()
         self.ser.close()
 
@@ -70,6 +77,31 @@ class DecaWaveTag:
                 dist2 = int(data[3], 16)
                 dist3 = int(data[4], 16) 
             return [dist1, dist2, dist3]
+        else:
+            return None
+    def get_kdist(self):
+        raw_data = self.ser.readline()
+        data = raw_data.split()
+
+        if self.pub is None:
+            try:
+                # tag_id = int(data[-1].split(":")[0][-1])
+                # self.offset = float(self.offsets[tag_id])
+                # self.poseStamped.header.frame_id = self.tag_names[tag_id]
+                # topic_name = "/{}/{}".format(self.tag_names[tag_id], DIST_TOPIC)
+                self.pub = rospy.Publisher("uwb_position", PoseStamped, queue_size=1)
+            except IndexError:
+                pass
+        self.kposeStamped.header.stamp = rospy.Time.now()
+
+        if len(data) > 0 and data[0] == 'mc':
+            mask = int(data[1], 16)
+            if (mask & 0x01):
+                global kdist1, kdist2, kdist3
+                kdist1 = kalman(int(data[2], 16) )
+                kdist2 = kalman(int(data[3], 16) )
+                kdist3 = kalman(int(data[4], 16) )
+            return [kdist1, kdist2, kdist3]
         else:
             return None
 
