@@ -24,25 +24,16 @@ class DecaWaveTag:
         self.rate = rospy.Rate(rospy.get_param("frequency", 100))
         self.poseStamped = PoseStamped()
         self.kalmanposeStamped = PoseStamped()
+        self.AF_kalmanposeStamped = PoseStamped()
         self.ser = serial.Serial(port=port, timeout=None, baudrate=baud)
-        self.pub = None
+        self.pub_orig = None
+        self.pub_filt = None
+        self.pub_AF = None
         self.offset = 0.0
-        self.x = 0 # process prediction
-        self.p = 0 # error prediction
-        self.q = 0.0001 # process noise
-        self.k = 0 # kalman gain
-        self.r = rospy.get_param("sensor_noise") # sensor noise
+        self.kalman1 = kalman.Kalman()
+        self.kalman2 = kalman.Kalman()
+        self.kalman3 = kalman.Kalman()
 
-    def range_cb(self, data):
-        filtered_range = data
-
-        self.p = self.p + self.q
-        self.k = self.p/(self.p + self.r)
-        self.x = self.x + self.k * (data.range - self.x)
-        self.p = (1.0 - self.k) * self.p
-
-        filtered_range.range = self.x
-        
 
     def start(self):
         self.ser.close()
@@ -50,18 +41,12 @@ class DecaWaveTag:
         self.run()
 
     def run(self):
-
-        dist = self.get_dist()
-        kdist = self.get_kdist()
-        print dist, kdist, self.x
-        """
         while not rospy.is_shutdown():
             dist = self.get_dist()
-            kdist = self.get_kdist()
             # print dist
-            if dist is not None and self.pub is not None:
-                position = self.trilaterate3D(dist)
-                kalman_position = self.trilaterate3D(kdist)
+            if dist is not None and self.pub_orig and self.pub_filt is not None:
+                position = self.trilaterate3D(dist[0:3])
+                kalman_position = self.trilaterate3D(dist[3:6])
                 print(position)
                 print(kalman_position)
                 self.poseStamped.pose.position.x = position[0]
@@ -70,25 +55,30 @@ class DecaWaveTag:
                 self.kalmanposeStamped.pose.position.x = kalman_position[0]
                 self.kalmanposeStamped.pose.position.y = kalman_position[1]
                 self.kalmanposeStamped.pose.position.z = kalman_position[2]
+                self.AF_kalmanposeStamped.pose.position.x = range_filter(position[0])
+                self.AF_kalmanposeStamped.pose.position.y = range_filter(position[1])
+                self.AF_kalmanposeStamped.pose.position.z = range_filter(position[2])
                 # # if self.poseStamped.header.frame_id == "tag_right_front":
                 # #     print dist
-                self.pub.publish(self.poseStamped)
-                self.pub.publish(self.kalmanposeStamped)
+                self.pub_orig.publish(self.poseStamped)
+                self.pub_filt.publish(self.kalmanposeStamped)
+                self.pub_AF.publish(self.AF_kalmanposeStamped)
             self.rate.sleep()   
         self.ser.close()
-        """
 
     def get_dist(self):
         raw_data = self.ser.readline()
         data = raw_data.split()
 
-        if self.pub is None:
+        if self.pub_orig or self.pub_filt or self.pub_AF is None:
             try:
                 # tag_id = int(data[-1].split(":")[0][-1])
                 # self.offset = float(self.offsets[tag_id])
                 # self.poseStamped.header.frame_id = self.tag_names[tag_id]
                 # topic_name = "/{}/{}".format(self.tag_names[tag_id], DIST_TOPIC)
-                self.pub = rospy.Publisher("uwb_position", PoseStamped, queue_size=1)
+                self.pub_orig = rospy.Publisher("uwb_position_orig", PoseStamped, queue_size=1)
+                self.pub_filt = rospy.Publisher("uwb_position_filt", PoseStamped, queue_size=1)
+                self.pub_AF = rospy.Publisher("uwb_position_AF", PoseStamped, queue_size=1)
             except IndexError:
                 pass
         self.poseStamped.header.stamp = rospy.Time.now()
@@ -99,43 +89,19 @@ class DecaWaveTag:
                 global dist1, dist2, dist3
                 dist1 = int(data[2], 16) 
                 dist2 = int(data[3], 16) 
-                dist3 = int(data[4], 16) 
-            return [dist1, dist2, dist3]
+                dist3 = int(data[4], 16)
+                kal_dist1 = self.kalman1.range_filter(dist1)
+                kal_dist2 = self.kalman2.range_filter(dist2)
+                kal_dist3 = self.kalman3.range_filter(dist3)
+            return [dist1, dist2, dist3, kal_dist1, kal_dist2, kal_dist3]
         else:
             return None
-                
-
-    def get_kdist(self):
-        raw_data = self.ser.readline()
-        data = raw_data.split()
-
-        if self.pub is None:
-            try:
-                # tag_id = int(data[-1].split(":")[0][-1])
-                # self.offset = float(self.offsets[tag_id])
-                # self.poseStamped.header.frame_id = self.tag_names[tag_id]
-                # topic_name = "/{}/{}".format(self.tag_names[tag_id], DIST_TOPIC)
-                self.pub = rospy.Publisher("uwb_position", PoseStamped, queue_size=1)
-            except IndexError:
-                pass
-        self.kalmanposeStamped.header.stamp = rospy.Time.now()
-
-        if len(data) > 0 and data[0] == 'mc':
-            mask = int(data[1], 16)
-            if (mask & 0x01):
-                global  kdist1, kdist2, kdist3
-                kdist1 = range_cb(int(data[2], 16))
-                kdist2 = range_cb(int(data[3], 16))
-                kdist3 = range_cb(int(data[4], 16))
-            return [kdist1, kdist2, kdist3]
-        else:
-            return 10
-                
+                               
 
     def trilaterate3D(self,distances):
         p1=np.array([0 ,0 ,0])
-        p2=np.array([3610 ,0 ,0])
-        p3=np.array([1800 ,8070 ,0])
+        p2=np.array([4100 ,0 ,0])
+        p3=np.array([4100 ,5400 ,0])
 
         r1=distances[0]
         r2=distances[1]

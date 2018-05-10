@@ -31,9 +31,9 @@
         <param name="frequency" value="100"/>
     </node>
 
-    <node name="filter_reader1" type="kalman.py" pkg="decawave_localization" output="screen">
+<!--     <node name="filter_reader1" type="kalman.py" pkg="decawave_localization" output="screen">
         <param name="tag_range_topic" value="tag_left_front/range" />
-    </node>
+    </node> -->
 
 
 

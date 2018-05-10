@@ -15,10 +15,10 @@ class Kalman(object):
 		self.k = 0 # kalman gain
 		self.r = rospy.get_param("sensor_noise") # sensor noise
 
-		self.tag_range_topic = rospy.get_param("~tag_range_topic")
-		self.tag_range_filtered_topic = self.tag_range_topic + "_filtered"
-		self.sub = rospy.Subscriber(self.tag_range_topic, Range, self.range_cb)
-		self.pub = rospy.Publisher(self.tag_range_filtered_topic, Range, queue_size=1)
+		# self.tag_range_topic = rospy.get_param("~tag_range_topic")
+		# self.tag_range_filtered_topic = self.tag_range_topic + "_filtered"
+		# self.sub = rospy.Subscriber(self.tag_range_topic, Range, self.range_cb)
+		# self.pub = rospy.Publisher(self.tag_range_filtered_topic, Range, queue_size=1)
 
 	def range_cb(self, data):
 		filtered_range = data
@@ -30,6 +30,14 @@ class Kalman(object):
 
 		filtered_range.range = self.x
 		self.pub.publish(filtered_range)
+
+	def range_filter(self, range):
+
+		self.p = self.p + self.q
+		self.k = self.p/(self.p + self.r)
+		self.x = self.x + self.k * (range - self.x)
+		self.p = (1.0 - self.k) * self.p
+		return self.x
 
 if __name__ == "__main__":
     rospy.init_node(NODE_NAME, anonymous=False)
